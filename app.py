@@ -352,8 +352,8 @@ def draw_tree(tree, snap, step):
     label = lambda i: "{}" if tree[i]["var"] is None else f"{tree[i]['var']}={tree[i]['val'][0]}"
     fig.add_trace(go.Scatter(
         x=[xs[i] for i in visible], y=[-tree[i]["depth"] for i in visible],
-        mode="markers" if small else "markers+text", text=[label(i) for i in visible],
-        textposition="bottom center", textfont=dict(size=10),
+        mode="markers" if small else "markers+text", text=[f"<b>{label(i)}</b>" for i in visible],
+        textposition="bottom center", textfont=dict(size=13, color="#0f172a"),
         hovertext=[f"{label(i)}<br>{status[i]}" for i in visible], hoverinfo="text",
         marker=dict(size=7 if small else 16, color=[TREE_COLORS[status[i]] for i in visible],
                     line=dict(color=["#f59e0b" if i == snap["node"] else "#334155" for i in visible],
@@ -473,7 +473,12 @@ with tab_csp:
     with c5:
         # Conflicts are flagged inline (not with st.warning) so the page doesn't jump when stepping.
         msg = f"Step {step} / {len(trace)-1}: {snap['message']}"
-        st.markdown(f":red[**⚠ {msg}**]" if snap["failed"] else f"**{msg}**")
+        if snap["failed"]:
+            st.markdown(f":red[**⚠ {msg}**]")
+        elif ": remove " in snap["message"]:  # forward-check / AC-3 pruning
+            st.markdown(f":yellow-background[**{msg}**]")
+        else:
+            st.markdown(f"**{msg}**")
     # Render map as an adjacency-based node layout.
     map_pos = prob["pos"]
     fig = go.Figure()
@@ -497,7 +502,8 @@ with tab_csp:
     l,r,q=st.columns([1,1.5,0.6])
     with l:
         st.plotly_chart(fig,width="stretch")
-        rows = "\n".join(f"| **{region}** | {snap['assignment'].get(region) or ', '.join(snap['domains'][region]) or '∅'} |"
+        tint = lambda c: f":{c.lower()}[**{c}**]"
+        rows = "\n".join(f"| **{region}** | {', '.join(map(tint, [snap['assignment'][region]] if region in snap['assignment'] else snap['domains'][region])) or '∅'} |"
                          for region in prob["neighbors"])
         st.markdown("| Region | Value / domain |\n|---|---|\n" + rows)
         m1,m2 = st.columns(2)
