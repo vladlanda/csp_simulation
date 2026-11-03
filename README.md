@@ -35,6 +35,6 @@ uv sync
 
 - Graph search: BFS, DFS, UCS, A*
 - Step-by-step frontier, explored set, path-cost display
-- CSP: graph coloring (Australia map or a triangulated 3×3 grid that forces backtracking) with naive BFS / DFS or backtracking, MRV, LCV, forward checking, arc consistency (AC-3), a step-by-step search-tree view, and the frontier / recursion stack / AC-3 arc queue beside it
+- CSP: graph coloring (Australia map, a triangulated 3×3 grid that forces backtracking, or a 27-node complex graph) with naive BFS / DFS or backtracking, MRV, LCV, forward checking, arc consistency (AC-3), remaining domains drawn as colored dots in each node, a step-by-step search-tree view, and the frontier / recursion stack / AC-3 arc queue beside it
 
 This is a clean-room educational implementation, not a reproduction of Berkeley's source code or exact interface.

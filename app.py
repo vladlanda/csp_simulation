@@ -175,6 +175,15 @@ for r in range(3):
             if rr < 3 and 0 <= cc < 3:
                 a, b = "ABCDEFGHI"[3*r+c], "ABCDEFGHI"[3*rr+cc]
                 GRID[a].add(b); GRID[b].add(a)
+# "Complex": 27 nodes (numbered row by row) traced from the lecture figure; (column, row-from-top).
+COMPLEX_POS = dict(zip(map(str, range(1, 28)), [
+    (0,0),(1,0),(2,0),(3,0),(4,0),(5,0), (2,1),(3,1),(4,1),(5,1), (1,2),(3,2),(4,2),(5,2),
+    (1,3),(2,3),(4,3),(5,3), (2,4),(3,4),(4,4),(5,4), (0,5),(1,5),(2,5),(3,5),(5,5)]))
+COMPLEX = {v: set() for v in COMPLEX_POS}
+for e in ("1-2 2-3 3-4 4-5 5-6 1-23 1-24 1-21 23-24 2-7 3-7 3-8 7-8 4-8 5-8 5-9 6-9 6-10 9-10 8-13 9-13 "
+          "10-13 11-15 15-16 12-16 13-17 14-17 14-18 18-21 18-22 16-19 16-20 19-25 20-26 21-25 21-26 25-26 22-27").split():
+    a, b = e.split("-")
+    COMPLEX[a].add(b); COMPLEX[b].add(a)
 CSP_PROBLEMS = {
     "Australia map": {
         "neighbors": AUSTRALIA,
@@ -187,6 +196,12 @@ CSP_PROBLEMS = {
         "pos": {v: (i % 3, 2 - i // 3) for i, v in enumerate("ABCDEFGHI")},
         "orders": {"Fixed: row by row (A … I)": list("ABCDEFGHI"),
                    "Fixed: column by column (A, D, G, B …)": list("ADGBEHCFI")},
+    },
+    "Complex (27 nodes)": {
+        "neighbors": COMPLEX,
+        "pos": {v: (c, 5 - r) for v, (c, r) in COMPLEX_POS.items()},
+        "orders": {"Fixed: row by row (1 … 27)": list(COMPLEX),
+                   "Fixed: column by column": sorted(COMPLEX, key=lambda v: COMPLEX_POS[v])},
     },
 }
 COLORS = ["Red", "Green", "Blue"]
@@ -250,8 +265,9 @@ def csp_trace(problem="Australia map", algorithm="Backtracking", ordering="MRV",
     assignment, domains = {}, {v: list(COLORS) for v in NB}
     def choose_var():
         unassigned = [v for v in (order or NB) if v not in assignment]
-        if order is None:  # MRV, ties broken by degree
-            return min(unassigned, key=lambda v: (len(domains[v]), -sum(n not in assignment for n in NB[v])))
+        if order is None:  # MRV = fewest legal values (also without filtering), ties broken by degree
+            legal = lambda v: sum(all(assignment.get(n) != c for n in NB[v]) for c in domains[v])
+            return min(unassigned, key=lambda v: (legal(v), -sum(n not in assignment for n in NB[v])))
         return unassigned[0]
     def prune(x, val, why, node, queue=None):
         """Remove val from x's domain; return False on wipeout."""
@@ -309,7 +325,9 @@ def csp_trace(problem="Australia map", algorithm="Backtracking", ordering="MRV",
         return False
     root = add_node(None, None, None, "expanded")
     record("Initial state: empty assignment", root, assignment, domains)
-    recurse(root)
+    if not recurse(root):
+        record(f"Step limit ({MAX_CSP_STEPS}) reached" if len(trace) >= MAX_CSP_STEPS else "No solution exists",
+               root, assignment, domains, True)
     return trace, tree
 
 TREE_COLORS = {"frontier": "#bfdbfe", "expanded": "#f1f5f9", "conflict": "#ef4444",
@@ -479,25 +497,38 @@ with tab_csp:
             st.markdown(f":yellow-background[**{msg}**]")
         else:
             st.markdown(f"**{msg}**")
-    # Render map as an adjacency-based node layout.
+    # Map: circles are shapes in data units so they scale with any graph; an unassigned node shows its
+    # remaining domain as colored dots (blue, red top; green bottom), an assigned node is filled.
     map_pos = prob["pos"]
+    palette = {"Red": "#ef4444", "Green": "#22c55e", "Blue": "#3b82f6"}
+    dot_xy = {"Blue": (-0.12, 0.08), "Red": (0.12, 0.08), "Green": (0, -0.12)}
+    R, r_dot = 0.3, 0.07
     fig = go.Figure()
     for region, neighbors in prob["neighbors"].items():
         for neighbor in neighbors:
             if region < neighbor:
-                x0,y0=map_pos[region]; x1,y1=map_pos[neighbor]
-                fig.add_trace(go.Scatter(x=[x0,x1],y=[y0,y1],mode="lines",
-                    line=dict(color="#94a3b8",width=3),hoverinfo="skip",showlegend=False))
-    palette={"Red":"#ef4444","Green":"#22c55e","Blue":"#3b82f6"}
-    for region,(x,y) in map_pos.items():
-        val=snap["assignment"].get(region)
-        fill=palette[val] if val else "#e2e8f0"
-        fig.add_trace(go.Scatter(x=[x],y=[y],mode="markers+text",text=[region],
-            textposition="middle center",marker=dict(size=55,color=fill,line=dict(color="#334155",width=1.5)),
-            textfont=dict(color="white" if val else "#0f172a",size=12),showlegend=False,
-            hovertext=f"{region}: {val or 'unassigned'}",hoverinfo="text"))
-    fig.update_layout(height=300,margin=dict(l=5,r=5,t=5,b=5),xaxis=dict(visible=False),
-        yaxis=dict(visible=False,scaleanchor="x",scaleratio=1),plot_bgcolor="white")
+                (x0, y0), (x1, y1) = map_pos[region], map_pos[neighbor]
+                fig.add_shape(type="line", x0=x0, y0=y0, x1=x1, y1=y1, layer="below",
+                              line=dict(color="#94a3b8", width=2))
+    for region, (x, y) in map_pos.items():
+        val = snap["assignment"].get(region)
+        fig.add_shape(type="circle", x0=x-R, y0=y-R, x1=x+R, y1=y+R, layer="below",
+                      fillcolor=palette[val] if val else "white", line=dict(color="#334155", width=1.5))
+        for c in [] if val else snap["domains"][region]:
+            dx, dy = dot_xy[c]
+            fig.add_shape(type="circle", x0=x+dx-r_dot, y0=y+dy-r_dot, x1=x+dx+r_dot, y1=y+dy+r_dot,
+                          layer="below", fillcolor=palette[c], line=dict(color="#1e293b", width=0.5))
+    xs, ys = zip(*map_pos.values())
+    fig.add_trace(go.Scatter(x=xs, y=[y + (0 if snap["assignment"].get(v) else R + 0.12) for v, (_, y) in map_pos.items()],
+        mode="text", text=list(map_pos), showlegend=False,
+        textfont=dict(size=12, color=["white" if v in snap["assignment"] else "#0f172a" for v in map_pos]),
+        hovertext=[f"{v}: {snap['assignment'].get(v) or ', '.join(snap['domains'][v]) or '∅'}" for v in map_pos],
+        hoverinfo="text"))
+    fig.update_layout(height=int(400 / (max(xs) - min(xs) + 1) * (max(ys) - min(ys) + 1.1)) + 10,  # ~400px-wide column
+        margin=dict(l=5, r=5, t=5, b=5),
+        xaxis=dict(visible=False, range=[min(xs) - 0.5, max(xs) + 0.5]),
+        yaxis=dict(visible=False, range=[min(ys) - 0.5, max(ys) + 0.6], scaleanchor="x", scaleratio=1),
+        plot_bgcolor="white")
     # Map + domains on the left, search tree and frontier/queue on the right, all visible while stepping.
     l,r,q=st.columns([1,1.5,0.6])
     with l:
@@ -532,7 +563,7 @@ with tab_about:
 
 This is a clean-room educational implementation, not a copy of Berkeley's source code or exact UI.
     """)
-    st.info("Current scope: a weighted graph search sandbox and graph-coloring CSPs (Australia map, triangulated 3×3 grid). Minimax, alpha-beta pruning, maze editing, and reinforcement learning are not included in this first version.")
+    st.info("Current scope: a weighted graph search sandbox and graph-coloring CSPs (Australia map, triangulated 3×3 grid, 27-node complex graph). Minimax, alpha-beta pruning, maze editing, and reinforcement learning are not included in this first version.")
 
 # Autoplay tick for the CSP tab. Done last so every tab is fully rendered before the rerun.
 if st.session_state.get("csp_playing"):
